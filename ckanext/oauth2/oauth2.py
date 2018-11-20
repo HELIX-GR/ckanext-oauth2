@@ -28,6 +28,7 @@ import json
 import logging
 from six.moves.urllib.parse import urljoin
 import os
+import urlparse
 
 from base64 import b64encode, b64decode
 from ckan.plugins import toolkit
@@ -96,6 +97,7 @@ class OAuth2Helper(object):
         return toolkit.redirect_to(auth_url.encode('utf-8'))
 
     def get_token(self):
+
         oauth = OAuth2Session(self.client_id, redirect_uri=self.redirect_uri, scope=self.scope)
 
         # Just because of FIWARE Authentication
@@ -109,10 +111,15 @@ class OAuth2Helper(object):
             headers['Authorization'] = 'Basic %s' % base64.urlsafe_b64encode(
                 '%s:%s' % (self.client_id, self.client_secret)
             )
-
+        
+        # Extract authorization code from callback URL
+        url_query = urlparse.urlparse(toolkit.request.url).query;
+        code = urlparse.parse_qs(url_query).get('code')[0]
+ 
         try:
             token = oauth.fetch_token(self.token_endpoint,
                                       headers=headers,
+                                      code=code,
                                       client_secret=self.client_secret,
                                       authorization_response=toolkit.request.url,
                                       verify=self.verify_https)
