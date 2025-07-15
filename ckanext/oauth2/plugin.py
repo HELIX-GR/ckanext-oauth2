@@ -21,14 +21,16 @@
 from __future__ import unicode_literals
 
 import logging
-import oauth2
+from ckanext.oauth2.oauth2  import OAuth2Helper
 import os
 
 from functools import partial
 from ckan import plugins
 from ckan.common import g
 from ckan.plugins import toolkit
-from urlparse import urlparse
+from urllib.parse import urlparse
+from flask import Blueprint, redirect
+from ckanext.oauth2.controller import OAuth2Controller
 
 log = logging.getLogger(__name__)
 
@@ -87,41 +89,44 @@ class OAuth2Plugin(plugins.SingletonPlugin):
 
     plugins.implements(plugins.IAuthenticator, inherit=True)
     plugins.implements(plugins.IAuthFunctions, inherit=True)
-    plugins.implements(plugins.IRoutes, inherit=True)
+    #plugins.implements(plugins.IRoutes, inherit=True)
+    plugins.implements(plugins.IBlueprint)
     plugins.implements(plugins.IConfigurer)
 
     def __init__(self, name=None):
         '''Store the OAuth 2 client configuration'''
         log.debug('Init OAuth2 extension')
 
-        self.oauth2helper = oauth2.OAuth2Helper()
+        self.oauth2helper = OAuth2Helper
 
-    def before_map(self, m):
-        log.debug('Setting up the redirections to the OAuth2 service')
+    def get_blueprint(self):
+        blueprint = Blueprint('ckanext_oauth2', __name__)
 
-        m.connect('/user/login',
-                  controller='ckanext.oauth2.controller:OAuth2Controller',
-                  action='login')
+        @blueprint.route('/user/login')
+        def login():
+            
+            return OAuth2Controller().login()
 
-        # We need to handle petitions received to the Callback URL
-        # since some error can arise and we need to process them
-        m.connect('/oauth2/callback',
-                  controller='ckanext.oauth2.controller:OAuth2Controller',
-                  action='callback')
+        @blueprint.route('/oauth2/callback')
+        def callback():
+            return OAuth2Controller().callback()
 
-        # Redirect the user to the OAuth service register page
         if self.register_url:
-            m.redirect('/user/register', self.register_url)
+            @blueprint.route('/user/register')
+            def redirect_register():
+                return flask.redirect(self.register_url)
 
-        # Redirect the user to the OAuth service reset page
         if self.reset_url:
-            m.redirect('/user/reset', self.reset_url)
+            @blueprint.route('/user/reset')
+            def redirect_reset():
+                return flask.redirect(self.reset_url)
 
-        # Redirect the user to the OAuth service reset page
         if self.edit_url:
-            m.redirect('/user/edit/{user}', self.edit_url)
+            @blueprint.route('/user/edit/<user>')
+            def redirect_edit(user):
+                return flask.redirect(self.edit_url)
 
-        return m
+        return blueprint
 
     def identify(self):
         log.debug('identify')

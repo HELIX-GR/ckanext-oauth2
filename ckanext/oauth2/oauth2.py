@@ -23,12 +23,15 @@ from __future__ import unicode_literals
 
 import base64
 import ckan.model as model
-import db
+import ckan.lib.helpers as h
+from flask import redirect, request
+from flask_login import login_user
+from . import db, constants
 import json
 import logging
 from six.moves.urllib.parse import urljoin
 import os
-import urlparse
+from urllib.parse import urlparse, parse_qs
 
 from base64 import b64encode, b64decode
 from ckan.plugins import toolkit
@@ -37,14 +40,13 @@ import requests
 from requests_oauthlib import OAuth2Session
 import six
 
-import constants
 
 
 log = logging.getLogger(__name__)
 
 
 def generate_state(url):
-    return b64encode(bytes(json.dumps({constants.CAME_FROM_FIELD: url})))
+    return b64encode(json.dumps({constants.CAME_FROM_FIELD: url}).encode('utf-8'))
 
 
 def get_came_from(state):
@@ -93,8 +95,7 @@ class OAuth2Helper(object):
         oauth = OAuth2Session(self.client_id, redirect_uri=self.redirect_uri, scope=self.scope, state=state)
         auth_url, _ = oauth.authorization_url(self.authorization_endpoint)
         log.debug('Challenge: Redirecting challenge to page {0}'.format(auth_url))
-        # CKAN 2.6 only supports bytes
-        return toolkit.redirect_to(auth_url.encode('utf-8'))
+        return toolkit.redirect_to(auth_url)
 
     def get_token(self):
 
@@ -113,8 +114,8 @@ class OAuth2Helper(object):
             )
         
         # Extract authorization code from callback URL
-        url_query = urlparse.urlparse(toolkit.request.url).query;
-        code = urlparse.parse_qs(url_query).get('code')[0]
+        url_query = urlparse(toolkit.request.url).query;
+        code = parse_qs(url_query).get('code')[0]
  
         try:
             token = oauth.fetch_token(self.token_endpoint,
@@ -161,10 +162,7 @@ class OAuth2Helper(object):
 
             # In CKAN can exists more than one user associated with the same email
             # Some providers, like Google and FIWARE only allows one account per email
-            user = None
-            users = model.User.by_email(email)
-            if len(users) == 1:
-                user = users[0]
+            user = model.User.by_email(email)
 
             # If the user does not exist, we have to create it...
             if user is None:
@@ -193,26 +191,38 @@ class OAuth2Helper(object):
         plugins = environ.get('repoze.who.plugins', {})
         return plugins.get(self.rememberer_name)
 
-    def remember(self, user_name):
-        '''
-        Remember the authenticated identity.
+    # def remember(self, user_name):
+    #     '''
+    #     Remember the authenticated identity.
 
-        This method simply delegates to another IIdentifier plugin if configured.
-        '''
-        log.debug('Repoze OAuth remember')
-        environ = toolkit.request.environ
-        rememberer = self._get_rememberer(environ)
-        identity = {'repoze.who.userid': user_name}
-        headers = rememberer.remember(environ, identity)
-        for header, value in headers:
-            toolkit.response.headers.add(header, value)
+    #     This method simply delegates to another IIdentifier plugin if configured.
+    #     '''
+    #     log.debug('Repoze OAuth remember')
+    #     environ = toolkit.request.environ
+    #     rememberer = self._get_rememberer(environ)
+    #     identity = {'repoze.who.userid': user_name}
+    #     headers = rememberer.remember(environ, identity)
+    #     for header, value in headers:
+    #         toolkit.response.headers.add(header, value)
+
+    def remember(self, user_name):
+        log.debug('Flask-Login remember for user: %s', user_name)
+    
+        # Load the user object from the database
+        user = model.User.get(user_name)
+
+        if user is None:
+            log.error('User not found: %s', user_name)
+            return
+
+        # Log in the user using Flask-Login
+        login_user(user)
 
     def redirect_from_callback(self):
         '''Redirect to the callback URL after a successful authentication.'''
-        state = toolkit.request.params.get('state')
+        state = request.args.get('state')  # replaces toolkit.request.params.get()
         came_from = get_came_from(state)
-        toolkit.response.status = 302
-        toolkit.response.location = came_from
+        return redirect(came_from, code=302)
 
     def get_stored_token(self, user_name):
         user_token = db.UserToken.by_user_name(user_name=user_name)
