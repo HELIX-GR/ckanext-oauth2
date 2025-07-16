@@ -27,7 +27,7 @@ from ckan.common import session
 import ckan.lib.helpers as helpers
 import ckan.lib.base as base
 import ckan.plugins.toolkit as toolkit
-from ckanext.oauth2.plugin import _get_previous_page
+from urllib.parse import urlparse
 from . import oauth2
 
 
@@ -48,7 +48,7 @@ class OAuth2Controller(object):
         # Get the page where the user was when the loggin attemp was fired
         # When the user is not logged in, he/she should be redirected to the dashboard when
         # the system cannot get the previous page
-        came_from_url = _get_previous_page(constants.INITIAL_PAGE)
+        came_from_url = self._get_previous_page(constants.INITIAL_PAGE)
 
         return self.oauth2helper.challenge(came_from_url)
 
@@ -80,3 +80,25 @@ class OAuth2Controller(object):
             redirect_url = '/' if redirect_url == constants.INITIAL_PAGE else redirect_url
             toolkit.response.location = redirect_url
             helpers.flash_error(error_description)
+
+
+
+    def _get_previous_page(self, default_page):
+        if 'came_from' not in toolkit.request.params:
+            came_from_url = toolkit.request.headers.get('Referer', default_page)
+        else:
+            came_from_url = toolkit.request.params.get('came_from', default_page)
+
+        came_from_url_parsed = urlparse(came_from_url)
+
+        # Avoid redirecting users to external hosts
+        if came_from_url_parsed.netloc != '' and came_from_url_parsed.netloc != toolkit.request.host:
+            came_from_url = default_page
+
+        # When a user is being logged and REFERER == HOME or LOGOUT_PAGE
+        # he/she must be redirected to the dashboard
+        pages = ['/', '/user/logged_out_redirect']
+        if came_from_url_parsed.path in pages:
+            came_from_url = default_page
+
+        return came_from_url
