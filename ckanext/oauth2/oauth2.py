@@ -114,7 +114,9 @@ class OAuth2Helper(object):
             )
         
         # Extract authorization code from callback URL
-        url_query = urlparse(toolkit.request.url).query;
+        log.debug('toolkit.request.url: {0}'.format(toolkit.request.url))
+        url_query = urlparse(toolkit.request.url).query
+        log.debug('url query: {0}'.format(url_query))
         code = parse_qs(url_query).get('code')[0]
  
         try:
