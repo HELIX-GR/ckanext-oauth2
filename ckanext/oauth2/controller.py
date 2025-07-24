@@ -76,7 +76,7 @@ class OAuth2Controller(object):
                     error_description = type(e).__name__
 
             toolkit.response.status_int = 302
-            redirect_url = oauth2.get_came_from(toolkit.request.params.get('state'))
+            redirect_url = oauth2.get_came_from(toolkit.request.args.get('state'))
             redirect_url = '/' if redirect_url == constants.INITIAL_PAGE else redirect_url
             toolkit.response.location = redirect_url
             helpers.flash_error(error_description)
@@ -84,11 +84,11 @@ class OAuth2Controller(object):
 
 
     def _get_previous_page(self, default_page):
-        if 'came_from' not in toolkit.request.params:
+        if 'came_from' not in toolkit.request.args:
             came_from_url = toolkit.request.headers.get('Referer', default_page)
         else:
-            came_from_url = toolkit.request.params.get('came_from', default_page)
-        log.debug('toolkit.request.params: {0}'.format(toolkit.request.params))
+            came_from_url = toolkit.request.args.get('came_from', default_page)
+        log.debug('toolkit.request.args: {0}, default page {1}'.format(toolkit.request.args, default_page))
         came_from_url_parsed = urlparse(came_from_url)
 
         # Avoid redirecting users to external hosts

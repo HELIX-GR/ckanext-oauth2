@@ -91,8 +91,12 @@ class OAuth2Helper(object):
 
     def challenge(self, came_from_url):
         # This function is called by the log in function when the user is not logged in
+
+        log.debug('Challenge came_from_url: {0}'.format(came_from_url))
+        if not came_from_url:
+            came_from_url = '/'
         state = generate_state(came_from_url)
-        log.debug('Challenge came_from_url {0} state: {1}'.format(came_from_url, state))
+
         oauth = OAuth2Session(self.client_id, redirect_uri=self.redirect_uri, scope=self.scope, state=state)
         auth_url, _ = oauth.authorization_url(self.authorization_endpoint)
         log.debug('Challenge: Redirecting challenge to page {0}'.format(auth_url))
