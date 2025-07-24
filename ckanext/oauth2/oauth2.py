@@ -227,6 +227,7 @@ class OAuth2Helper(object):
         '''Redirect to the callback URL after a successful authentication.'''
         state = request.args.get('state')  # replaces toolkit.request.params.get()
         came_from = get_came_from(state)
+        log.debug("State: {0}, came_from: {1}".format(state, came_from))
         return redirect(came_from, code=302)
 
     def get_stored_token(self, user_name):
