@@ -26,7 +26,7 @@ import os
 
 from functools import partial
 from ckan import plugins
-from ckan.common import g
+from ckan.common import g, current_user
 from ckan.plugins import toolkit
 from urllib.parse import urlparse
 from flask import Blueprint, redirect
@@ -76,7 +76,7 @@ class OAuth2Plugin(plugins.SingletonPlugin):
         '''Store the OAuth 2 client configuration'''
         log.debug('Init OAuth2 extension')
 
-        self.oauth2helper = OAuth2Helper
+        self.oauth2helper = OAuth2Helper()
 
     def get_blueprint(self):
         blueprint = Blueprint('ckanext_oauth2', __name__)
@@ -108,8 +108,6 @@ class OAuth2Plugin(plugins.SingletonPlugin):
         return blueprint
 
     def identify(self):
-        log.debug('identify')
-
         def _refresh_and_save_token(user_name):
             new_token = self.oauth2helper.refresh_token(user_name)
             if new_token:
@@ -132,13 +130,11 @@ class OAuth2Plugin(plugins.SingletonPlugin):
                 user_name = self.oauth2helper.identify(token)
             except Exception:
                 pass
+        # If the authentication via API fails, we can still 
+        # log in the user using flask current user.
+        if user_name is None and current_user.is_authenticated:
+            user_name = current_user.name
 
-        # If the authentication via API fails, we can still log in the user using session.
-        if user_name is None and 'repoze.who.identity' in environ:
-            user_name = environ['repoze.who.identity']['repoze.who.userid']
-            log.info('User %s logged using session' % user_name)
-
-        # If we have been able to log in the user (via API or Session)
         if user_name:
             g.user = user_name
             toolkit.c.user = user_name
@@ -146,7 +142,6 @@ class OAuth2Plugin(plugins.SingletonPlugin):
             toolkit.c.usertoken_refresh = partial(_refresh_and_save_token, user_name)
         else:
             g.user = None
-            log.warn('The user is not currently logged...')
 
     def get_auth_functions(self):
         # we need to prevent some actions being authorized.
