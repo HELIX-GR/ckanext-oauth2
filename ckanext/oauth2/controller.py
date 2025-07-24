@@ -88,7 +88,7 @@ class OAuth2Controller(object):
             came_from_url = toolkit.request.headers.get('Referer', default_page)
         else:
             came_from_url = toolkit.request.params.get('came_from', default_page)
-
+        log.debug('toolkit.request.params: {0}'.format(toolkit.request.params))
         came_from_url_parsed = urlparse(came_from_url)
 
         # Avoid redirecting users to external hosts
