@@ -119,9 +119,7 @@ class OAuth2Helper(object):
             )
         
         # Extract authorization code from callback URL
-        log.debug('toolkit.request.url: {0}'.format(toolkit.request.url))
         url_query = urlparse(toolkit.request.url).query
-        log.debug('url query: {0}'.format(url_query))
         code = parse_qs(url_query).get('code')[0]
  
         try:
@@ -199,6 +197,7 @@ class OAuth2Helper(object):
 
     def _get_rememberer(self, environ):
         plugins = environ.get('repoze.who.plugins', {})
+
         return plugins.get(self.rememberer_name)
 
     # def remember(self, user_name):
@@ -216,7 +215,7 @@ class OAuth2Helper(object):
     #         toolkit.response.headers.add(header, value)
 
     def remember(self, user_name):
-        log.debug('Flask-Login remember for user: %s', user_name)
+        log.debug('Flask-Login user: %s', user_name)
     
         # Load the user object from the database
         user = model.User.get(user_name)
@@ -227,12 +226,14 @@ class OAuth2Helper(object):
 
         # Log in the user using Flask-Login
         login_user(user)
+        
+        addUserToOrgs(user)
+        
 
     def redirect_from_callback(self):
         '''Redirect to the callback URL after a successful authentication.'''
         state = request.args.get('state')  # replaces toolkit.request.params.get()
         came_from = get_came_from(state)
-        log.debug("State: {0}, came_from: {1}".format(state, came_from))
         return redirect(came_from, code=302)
 
     def get_stored_token(self, user_name):
@@ -276,3 +277,55 @@ class OAuth2Helper(object):
             return token
         else:
             log.warn('User %s has no refresh token' % user_name)
+
+def addUserToOrgs(user):
+    try:
+        # Check if the user is already a member of any org
+        existing_orgs = [
+            m.group_id for m in model.Session.query(model.Member)
+            .filter_by(table_id=user.id, table_name='user', capacity='member')
+        ]
+
+        if existing_orgs:
+            log.debug("User %s already in org(s) %s, skipping auto-add", user.name, existing_orgs)
+            return
+
+        # Split email
+        email_parts = user.name.split('@')
+        if len(email_parts) != 2:
+            log.warning("Skipping malformed username/email: %s", user.name)
+            return
+
+        user_domain = email_parts[1]
+
+        # Get all orgs
+        all_orgs = toolkit.get_action('organization_list')({}, {'all_fields': True, 'include_extras': True})
+        top_org_ids = {org['id'] for org in all_orgs}  
+
+        for org in all_orgs:
+            log.info ('org id: {}, org domain: {}'.format(org['id'], org.get('email_domain')))
+            if org['id'] not in top_org_ids or not org.get('email_domain'):
+                continue
+
+            domain = org['email_domain']
+            domain_parts = domain.split('.')
+
+            match = (
+                domain == user_domain
+                or user_domain.endswith(f".{domain}")
+                or domain.endswith(f".{user_domain}")
+                or (
+                    len(domain_parts) == 2 and
+                    f"{domain_parts[0]}.edu.{domain_parts[1]}" in user_domain
+                )
+            )
+
+            if match:
+                log.info("Adding user %s to org %s", user.name, org['id'])
+                context = {'ignore_auth': True}
+                toolkit.get_action('organization_member_create')(
+                    context, {'id': org['id'], 'username': user.name, 'role': 'member'}
+                )
+
+    except Exception as e:
+        log.error("Error assigning user %s to org: %s", user.name, e, exc_info=True)
