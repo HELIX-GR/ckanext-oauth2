@@ -172,6 +172,11 @@ class OAuth2Helper(object):
             # Some providers, like Google and FIWARE only allows one account per email
             user = model.User.by_email(email)
 
+            # check for valid email
+            if not check_valid_emails(email):
+                log.warning("OAuth2 login blocked: unauthorized email %s", email)
+                return None
+
             # If the user does not exist, we have to create it...
             if user is None:
                 user = model.User(email=email)
@@ -227,7 +232,7 @@ class OAuth2Helper(object):
         # Log in the user using Flask-Login
         login_user(user)
         
-        addUserToOrgs(user)
+        add_user_to_orgs(user)
         
 
     def redirect_from_callback(self):
@@ -247,6 +252,9 @@ class OAuth2Helper(object):
             }
 
     def update_token(self, user_name, token):
+        if not user_name:
+            log.warning("Skipping token update because user_name is None (invalid email login blocked).")
+            return
         user_token = db.UserToken.by_user_name(user_name=user_name)
         # Create the user if it does not exist
         if not user_token:
@@ -278,7 +286,7 @@ class OAuth2Helper(object):
         else:
             log.warn('User %s has no refresh token' % user_name)
 
-def addUserToOrgs(user):
+def add_user_to_orgs(user):
     try:
         # Check if the user is already a member of any org
         existing_orgs = [
@@ -303,7 +311,7 @@ def addUserToOrgs(user):
         top_org_ids = {org['id'] for org in all_orgs}  
 
         for org in all_orgs:
-            log.info ('org id: {}, org domain: {}'.format(org['id'], org.get('email_domain')))
+            #log.info ('org id: {}, org domain: {}'.format(org['id'], org.get('email_domain')))
             if org['id'] not in top_org_ids or not org.get('email_domain'):
                 continue
 
@@ -329,3 +337,47 @@ def addUserToOrgs(user):
 
     except Exception as e:
         log.error("Error assigning user %s to org: %s", user.name, e, exc_info=True)
+
+def check_valid_emails(user_name):
+    # Split email
+    email_parts = user_name.split('@')
+    if len(email_parts) != 2:
+        log.warning("Skipping malformed username/email: %s", user_name)
+        return False   # invalid email
+
+    user_domain = email_parts[1]
+
+    # Get all orgs
+    all_orgs = toolkit.get_action('organization_list')(
+        {}, {'all_fields': True, 'include_extras': True}
+    )
+    top_org_ids = {org['id'] for org in all_orgs}
+
+    matched = False
+    log.info("in check valid email")
+    for org in all_orgs:
+        org_domain = org.get('email_domain')
+
+        # Skip orgs without domain
+        if org['id'] not in top_org_ids or not org_domain:
+            continue
+
+        domain_parts = org_domain.split('.')
+
+        # Matching rules
+        match = (
+            org_domain == user_domain
+            or user_domain.endswith(f".{org_domain}")
+            or org_domain.endswith(f".{user_domain}")
+            or (
+                len(domain_parts) == 2 and
+                f"{domain_parts[0]}.edu.{domain_parts[1]}" in user_domain
+            )
+        )
+
+        # If matched, add user to org
+        if match:
+            matched = True
+            log.info("User %s matched domain for org %s", user_name, org['id'])
+
+    return matched   
