@@ -341,11 +341,22 @@ def add_user_to_orgs(user):
 def check_valid_emails(user_name):
     # Split email
     email_parts = user_name.split('@')
+    log.info("User name: %s", user_name)
+    #log.info("Email parts: %s", email_parts)
     if len(email_parts) != 2:
         log.warning("Skipping malformed username/email: %s", user_name)
         return False   # invalid email
 
     user_domain = email_parts[1]
+
+    manual_domains = {
+        "heal-link.gr",
+        "hardmin.heal-link.gr"
+    }
+
+    if user_domain in manual_domains:
+        log.info("User %s matched manual domain whitelist", user_name)
+        return True
 
     # Get all orgs
     all_orgs = toolkit.get_action('organization_list')(
@@ -354,7 +365,6 @@ def check_valid_emails(user_name):
     top_org_ids = {org['id'] for org in all_orgs}
 
     matched = False
-    log.info("in check valid email")
     for org in all_orgs:
         org_domain = org.get('email_domain')
 
@@ -374,7 +384,6 @@ def check_valid_emails(user_name):
                 f"{domain_parts[0]}.edu.{domain_parts[1]}" in user_domain
             )
         )
-
         # If matched, add user to org
         if match:
             matched = True
